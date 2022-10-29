@@ -116,17 +116,17 @@ def handle_auth(client_socket: socket):
     # send initial data to let server know the client is ready for auth
     send_data(templates["SYN"], client_socket)
     # get the response from the server
-    while True:
-        server_data = receive_data(client_socket)
-        # ok to begin authentication
-        if server_data["command"] == "SYN_OK":
-            print(server_data["message"])
-            # get the username and password from the user
-            username, password = get_credentials()
-            # send the data to the server with credentials
-            auth_data["data"]["username"] = username
-            auth_data["data"]["password"] = password
-            send_data(auth_data, client_socket)
+    server_data = receive_data(client_socket)
+    # ok to begin authentication
+    if server_data["command"] == "SYN_OK":
+        print(server_data["message"])
+        # get the username and password from the user
+        username, password = get_credentials()
+        # send the data to the server with credentials
+        auth_data["data"]["username"] = username
+        auth_data["data"]["password"] = password
+        send_data(auth_data, client_socket)
+        while True:
             server_data = receive_data(client_socket)
             # server says credentials match and everything is ok
             if server_data["command"] == "AUTH_OK":
@@ -139,13 +139,16 @@ def handle_auth(client_socket: socket):
                 password = get_password()
                 auth_data["data"]["password"] = password
                 send_data(auth_data, client_socket)
+            # maximum amount of password tries have been reached. Close the program
+            elif server_data["command"] == "AUTH_INV_PASS_MAX":
+                print(server_data["message"])
+                exit_program(client_socket)
             # Username doesn't match any on record
             elif server_data["command"] == "AUTH_INV_USER":
                 print(server_data["message"])
                 # get a new username and password from the user and update the auth_data object
                 auth_data["data"]["username"] = get_username()
                 auth_data["data"]["password"] = get_password()
-
                 send_data(auth_data, client_socket)
             elif server_data["command"] == "AUTH_INV_BAN":
                 print(server_data["message"])
@@ -184,7 +187,8 @@ def get_password():
 
 
 def get_username():
-    valid = True
+    valid = False
+    username = ""
     while not valid:
         username = input("Username: ")
         # ensure username is not blank and has no whitespace
@@ -210,5 +214,6 @@ if __name__ == "__main__":
     try:
         main(sys.argv)
     except KeyboardInterrupt:
+        print()
         print("shutting down...")
         sys.exit(0)
