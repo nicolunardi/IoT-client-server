@@ -26,6 +26,7 @@ templates = {
         "message": "Your account is blocked due to multiple authentication failures. Please try again later",
     },
     "AUTH_OK": {"command": "AUTH_OK", "message": "Welcome!"},
+    "OUT_OK": {"command": "OUT_OK"},
     "ERR": {
         "command": "ERR",
         "message": "[Server]: Error has been encountered",

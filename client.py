@@ -101,7 +101,6 @@ def handle_commands(client_socket: socket):
         user_input = input(
             "Enter one of the following commands (EDG, UED, SCS, DTE, AED, OUT): "
         ).split()
-        print(user_input)
         # ensure a valid command is entered
         command = user_input[0]
         if not command in commands:
@@ -109,6 +108,8 @@ def handle_commands(client_socket: socket):
         else:
             if command == "EDG":
                 handle_edg(user_input)
+            elif command == "OUT":
+                handle_out(client_socket)
 
 
 def handle_auth(client_socket: socket):
@@ -234,6 +235,14 @@ def handle_edg(user_input):
         print(
             f"Data generation done, {data_amount} data samples have been generated and stored in the file {filename}"
         )
+
+
+def handle_out(client_socket: socket):
+    send_data(templates["OUT"], client_socket)
+    data = receive_data(client_socket)
+    if data["command"] == "OUT_OK":
+        print(data["message"])
+        sys.exit(0)
 
 
 # send the out command to the server, close the TCP connection and exit the program

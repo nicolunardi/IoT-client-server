@@ -210,8 +210,11 @@ class ClientThread(Thread):
 
     def handle_close(self):
         print(
-            f"[Server]: closing connection to client on {self.client_address}"
+            f"Closing connection to client on {self.client_address} with device name {self.client_name}"
         )
+        response = templates["OUT_OK"]
+        response["message"] = f"Goodbye, {self.client_name}"
+        self.send_data(response)
 
     # checks the credentials file against the credentials provided by the user.
     # credentials is a tuple of the form (username, password)
