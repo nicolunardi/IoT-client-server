@@ -5,6 +5,7 @@ templates = {
         "command": "AUTH",
         "data": {"username": "", "password": ""},
     },
+    "UDP": {"command": "UDP"},
     "OUT": {"command": "OUT"},
     # server
     "SYN_OK": {"command": "SYN_OK", "message": "Please log in"},

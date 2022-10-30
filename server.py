@@ -23,14 +23,27 @@ class Server:
         self.start()
 
     def start(self):
-        # set up the socket and start listening for incoming connections
-        self.server_socket.bind(self.address)
-        self.server_socket.listen(5)
-        print(f"listening on port {self.port}")
+        # TODO create all the files from scratch when server boots
+        try:
+            # set up the socket and start listening for incoming connections
+            self.server_socket.bind(self.address)
+            self.server_socket.listen(5)
+            print(f"listening on port {self.port}")
 
-        # accept incoming connections
-        self.receive_client()
-        # self.server_socket.close()
+            # create a file writer thread
+            self.initialize_file_writer()
+
+            # accept incoming connections
+            self.receive_client()
+            # self.server_socket.close()
+        except KeyboardInterrupt:
+            self.close_server()
+
+    # create and initialize the file writer thread
+    def initialize_file_writer(self):
+        file_writer = FileWriter(self)
+        file_writer.daemon = True
+        file_writer.start()
 
     def receive_client(self):
         while True:
@@ -39,6 +52,7 @@ class Server:
                 client_thread = ClientThread(
                     client_address, client_socket, self
                 )
+                client_thread.daemon = True
                 client_thread.start()
             except Exception as e:
                 # TODO
@@ -79,6 +93,20 @@ class Server:
             "time": datetime.now(),
         }
 
+    # get a formatted string representing the date
+    def format_date(self, date: datetime):
+        return date.strftime("%d %B %Y %H:%M:%S")
+
+    # get datetime object from a formatted string
+    def get_date_from_str(self, date: str):
+        return datetime.strptime(date, "%d %B %Y %H:%M:%S")
+
+    def close_server(self):
+        print()
+        print("Server is shutting down...")
+        self.server_socket.close()
+        sys.exit(0)
+
 
 class ClientThread(Thread):
     def __init__(
@@ -90,6 +118,7 @@ class ClientThread(Thread):
         self.is_active = True
         self.attempts = 0
         self.server = server
+        self.client_name = ""
 
     def run(self):
         while self.is_active:
@@ -99,6 +128,12 @@ class ClientThread(Thread):
                 # initial interaction. first command after connection established
                 if client_data["command"] == "SYN":
                     self.handle_auth()
+                elif client_data["command"] == "UDP":
+                    self.handle_receive_udp_info(client_data)
+                # terminate the thread
+                elif client_data["command"] == "OUT":
+                    self.handle_close()
+                    return
 
                 if client_data == "FIN":
                     self.is_active = False
@@ -120,6 +155,7 @@ class ClientThread(Thread):
 
     def handle_auth(self):
         self.send_data(templates["SYN_OK"])
+
         while True:
             client_data = self.receive_data()
             if client_data["command"] == "AUTH":
@@ -131,7 +167,10 @@ class ClientThread(Thread):
                     if self.server.is_user_banned(username):
                         self.send_data(templates["AUTH_INV_BAN"])
                         raise ClientBannedException
-                    self.send_data(templates["AUTH_OK"])
+                    else:
+                        self.client_name = username
+                        self.send_data(templates["AUTH_OK"])
+                    return
                 elif validity == "AUTH_INV_PASS":
                     # check to see if the user has been banned
                     if self.server.is_user_banned(username):
@@ -164,10 +203,6 @@ class ClientThread(Thread):
                 elif validity == "AUTH_INV_USER":
                     self.send_data(templates["AUTH_INV_USER"])
 
-            if client_data["command"] == "ERR":
-                self.handle_close()
-                return
-
     # sends data to client. converts dict to json string and then to bytes
     def send_data(self, data):
         print("sending, ", data)
@@ -190,6 +225,52 @@ class ClientThread(Thread):
                     else:
                         return "AUTH_INV_PASS"
         return "AUTH_INV_USER"
+
+    # take the udp port number and add a task to teh queue. The file writer will then
+    # handle writing the information to the file
+    def handle_receive_udp_info(self, client_data):
+        udp_port = client_data["data"]
+        timestamp = self.server.format_date(datetime.now())
+        new_task = {
+            "task": "UDP_UPLOAD",
+            "data": (
+                timestamp,
+                self.client_name,
+                self.client_address[0],
+                udp_port,
+            ),
+        }
+        self.server.queue.put(new_task)
+
+
+class FileWriter(Thread):
+    def __init__(self, server: Server):
+        Thread.__init__(self)
+        self.server = server
+
+    # some code taken from the official python site on how to use Queue
+    # https://docs.python.org/3/library/queue.html
+    def run(self):
+        try:
+            while True:
+                if not self.server.queue.empty():
+                    task = self.server.queue.get()
+                    self.handle_tasks(task)
+        except (KeyboardInterrupt, SystemExit):
+            return
+
+    def handle_tasks(self, task):
+        if task["task"] == "UDP_UPLOAD":
+            self.handle_udp_upload(task["data"])
+
+    def handle_udp_upload(self, data):
+        timestamp, device_name, device_ip, udp_port = data
+        with open("server/cse-edge-device-log.txt", "r+") as file:
+            # get the last sequence number
+            highest_sequence = len(file.readlines())
+            file.write(
+                f"{highest_sequence + 1}; {timestamp}; {device_name}; {device_ip}; {udp_port} \n"
+            )
 
 
 class ClientBannedException(Exception):
@@ -229,6 +310,4 @@ if __name__ == "__main__":
     try:
         main(sys.argv)
     except KeyboardInterrupt:
-        print()
-        print("Server is shutting down...")
-        sys.exit(1)
+        sys.exit(0)

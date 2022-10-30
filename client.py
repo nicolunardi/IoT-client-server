@@ -1,4 +1,3 @@
-from http import server
 from socket import *
 import sys
 import json
@@ -6,6 +5,7 @@ from data_templates import templates
 
 FORMAT = "utf-8"
 BUFF_SIZE = 1024
+device_name = ""
 
 
 def main(argv):
@@ -21,10 +21,12 @@ def main(argv):
 
     # create a socket and establish a connection to the server
     client_socket = create_tcp_socket((server_ip, server_port))
-
     # initialize authentication
     handle_auth(client_socket)
-    
+
+    # upon successful authentication, send the UDP port to the server
+    send_udp_port(client_udp_port, client_socket)
+
     handle_commands(client_socket)
 
 
@@ -94,17 +96,19 @@ def get_credentials():
 
 
 def handle_commands(client_socket: socket):
+    commands = ["EDG", "UED", "SCS", "DTE", "AED", "OUT"]
     while True:
-        data = input("please type something: ")
-        client_socket.sendall(data.encode())
-        server_data = b""
-        while True:
-            chunk = client_socket.recv(BUFF_SIZE)
-            server_data += chunk
-            if len(chunk) < BUFF_SIZE:
-                break
-
-        print(server_data.decode(FORMAT))
+        user_input = input(
+            "Enter one of the following commands (EDG, UED, SCS, DTE, AED, OUT): "
+        ).split()
+        print(user_input)
+        # ensure a valid command is entered
+        command = user_input[0]
+        if not command in commands:
+            print("Error. Invalid command!")
+        else:
+            if command == "EDG":
+                handle_edg(user_input)
 
 
 def handle_auth(client_socket: socket):
@@ -127,6 +131,8 @@ def handle_auth(client_socket: socket):
             server_data = receive_data(client_socket)
             # server says credentials match and everything is ok
             if server_data["command"] == "AUTH_OK":
+                global device_name
+                device_name = username
                 print(server_data["message"])
                 return
             # something wrong with the password
@@ -199,7 +205,36 @@ def get_username():
     # remove leading and trailing whitespace
     return username.strip()
 
-def send_udp_port
+
+def send_udp_port(udp_port: int, client_socket: socket):
+    udp_data = templates["UDP"]
+    udp_data["data"] = udp_port
+    send_data(udp_data, client_socket)
+
+
+def handle_edg(user_input):
+    if len(user_input) != 3:
+        print("Correct usage: EDG [fileID] [dataAmount]")
+        return
+
+    _, file_id, data_amount = user_input
+    # ensure arguments are integers and that id is >= 0 and amount is > 0
+    if (not file_id.isdigit() or not data_amount.isdigit()) or (
+        not int(file_id) >= 0 or not int(data_amount) > 0
+    ):
+        print("fileID and DataAmount must be integers of the form:")
+        print("fileID >= 0, dataAmount > 0")
+    else:
+        filename = f"{device_name}-{file_id}.txt"
+        print(f"The edge device is generating {data_amount} data samples...")
+
+        with open(f"client/{filename}", "w") as file:
+            for i in range(int(data_amount)):
+                file.write(f"{i}\n")
+        print(
+            f"Data generation done, {data_amount} data samples have been generated and stored in the file {filename}"
+        )
+
 
 # send the out command to the server, close the TCP connection and exit the program
 def exit_program(client_socket: socket):
