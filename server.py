@@ -35,7 +35,6 @@ class Server:
     def receive_client(self):
         while True:
             try:
-                print(active_count())
                 client_socket, client_address = self.server_socket.accept()
                 client_thread = ClientThread(
                     client_address, client_socket, self
@@ -49,6 +48,10 @@ class Server:
         return self.user_attempts
 
     def get_attempts_by_user(self, user):
+        if not user in self.user_attempts:
+            # create the user in the attempts object if not present
+            self.create_user_attempt_entry(user)
+
         return self.user_attempts[user]
 
     def set_user_attempts(self, user, value):
@@ -56,15 +59,25 @@ class Server:
 
     # checks if a user is banned
     def is_user_banned(self, user):
+        if not user in self.user_attempts:
+            self.create_user_attempt_entry(user)
+        # create the object for the user
         if self.user_attempts[user]["banned"]:
             time_since_ban = (
                 datetime.now() - self.user_attempts[user]["time"]
             ).seconds
             if time_since_ban < 10:
-                return True
+                self.user_attempts[user]["banned"] = True
             else:
                 self.user_attempts[user]["banned"] = False
-        return False
+        return self.user_attempts[user]["banned"]
+
+    def create_user_attempt_entry(self, user):
+        self.user_attempts[user] = {
+            "attempts": 0,
+            "banned": False,
+            "time": datetime.now(),
+        }
 
 
 class ClientThread(Thread):
@@ -83,7 +96,6 @@ class ClientThread(Thread):
             try:
                 # get the data and convert to a python dict
                 client_data = self.receive_data()
-                print("here", client_data)
                 # initial interaction. first command after connection established
                 if client_data["command"] == "SYN":
                     self.handle_auth()
@@ -92,7 +104,7 @@ class ClientThread(Thread):
                     self.is_active = False
                     break
             except Exception as e:
-                print(e)
+                print(e.message)
                 self.handle_close()
                 self.is_active = False
 
@@ -110,42 +122,45 @@ class ClientThread(Thread):
         self.send_data(templates["SYN_OK"])
         while True:
             client_data = self.receive_data()
-
             if client_data["command"] == "AUTH":
                 username = client_data["data"]["username"]
                 password = client_data["data"]["password"]
                 # check the validity of the credentials
                 validity = self.verify_credentials((username, password))
-                print(validity)
                 if validity == "AUTH_OK":
                     if self.server.is_user_banned(username):
                         self.send_data(templates["AUTH_INV_BAN"])
                         raise ClientBannedException
                     self.send_data(templates["AUTH_OK"])
                 elif validity == "AUTH_INV_PASS":
+                    # check to see if the user has been banned
                     if self.server.is_user_banned(username):
                         self.send_data(templates["AUTH_INV_BAN"])
-                    # check how many incorrect attempts have been made and update the object
-                    user_attempts_object = self.server.get_attempts_by_user(
-                        username
-                    )
-                    if user_attempts_object["attempts"] < self.server.attempts:
+                    else:
+                        # check how many incorrect attempts have been made and update the object
+                        user_attempts_object = self.server.get_attempts_by_user(
+                            username
+                        )
                         if (
                             user_attempts_object["attempts"]
-                            == self.server.attempts - 1
+                            < self.server.attempts
                         ):
-                            user_attempts_object["attempts"] += 1
-                            user_attempts_object["banned"] = True
-                            user_attempts_object["time"] = datetime.now()
-                            self.send_data(templates["AUTH_INV_PASS_MAX"])
-                        else:
-                            user_attempts_object["attempts"] += 1
-                            self.send_data(templates["AUTH_INV_PASS"])
+                            if (
+                                user_attempts_object["attempts"]
+                                == self.server.attempts - 1
+                            ):
+                                user_attempts_object["attempts"] = 0
+                                user_attempts_object["banned"] = True
+                                user_attempts_object["time"] = datetime.now()
+                                self.send_data(templates["AUTH_INV_PASS_MAX"])
+                            else:
+                                user_attempts_object["attempts"] += 1
+                                self.send_data(templates["AUTH_INV_PASS"])
 
-                        # update the user attempts object based on new values
-                        self.server.set_user_attempts(
-                            username, user_attempts_object
-                        )
+                            # update the user attempts object based on new values
+                            self.server.set_user_attempts(
+                                username, user_attempts_object
+                            )
                 elif validity == "AUTH_INV_USER":
                     self.send_data(templates["AUTH_INV_USER"])
 
@@ -155,6 +170,7 @@ class ClientThread(Thread):
 
     # sends data to client. converts dict to json string and then to bytes
     def send_data(self, data):
+        print("sending, ", data)
         self.client_socket.sendall(json.dumps(data).encode())
 
     def handle_close(self):
@@ -215,4 +231,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print()
         print("Server is shutting down...")
-        sys.exit(0)
+        sys.exit(1)

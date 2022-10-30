@@ -24,9 +24,7 @@ def main(argv):
 
     # initialize authentication
     handle_auth(client_socket)
-    # get credentials from the client. uses basic validation
-    username, password = get_credentials()
-
+    
     handle_commands(client_socket)
 
 
@@ -71,7 +69,6 @@ def get_credentials():
     valid = False
     username = ""
     password = ""
-    print("Please enter your credentials for authentication purposes.")
     while not valid:
         username = input("Username: ")
         # ensure username is not blank and has no whitespace
@@ -202,6 +199,7 @@ def get_username():
     # remove leading and trailing whitespace
     return username.strip()
 
+def send_udp_port
 
 # send the out command to the server, close the TCP connection and exit the program
 def exit_program(client_socket: socket):
