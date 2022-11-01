@@ -108,6 +108,8 @@ def handle_commands(client_socket: socket):
         else:
             if command == "EDG":
                 handle_edg(user_input)
+            elif command == "UED":
+                handle_ued(user_input, client_socket)
             elif command == "OUT":
                 handle_out(client_socket)
 
@@ -235,6 +237,28 @@ def handle_edg(user_input):
         print(
             f"Data generation done, {data_amount} data samples have been generated and stored in the file {filename}"
         )
+
+
+def handle_ued(user_input, client_socket: socket):
+    if len(user_input) != 2:
+        print("Correct usage: UED [fileID]")
+        return
+
+    file_id = user_input[1]
+    filename = f"{device_name}-{file_id}"
+    data = []
+    try:
+        with open(f"client/{filename}.txt", "r") as file:
+            for line in file:
+                data.append(line)
+        message = templates["UED"]
+        message["data"] = data
+        message["file_id"] = file_id
+        send_data(message, client_socket)
+        server_message = receive_data(client_socket)
+        print(server_message["message"])
+    except FileNotFoundError:
+        print("a file with that ID does not exist. Please try another ID")
 
 
 def handle_out(client_socket: socket):

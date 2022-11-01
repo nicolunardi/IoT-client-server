@@ -6,6 +6,7 @@ templates = {
         "data": {"username": "", "password": ""},
     },
     "UDP": {"command": "UDP"},
+    "UED": {"command": "UED"},
     "OUT": {"command": "OUT"},
     # server
     "SYN_OK": {"command": "SYN_OK", "message": "Please log in"},
@@ -26,6 +27,7 @@ templates = {
         "message": "Your account is blocked due to multiple authentication failures. Please try again later",
     },
     "AUTH_OK": {"command": "AUTH_OK", "message": "Welcome!"},
+    "UED_OK": {"command": "UED_OK"},
     "OUT_OK": {"command": "OUT_OK"},
     "ERR": {
         "command": "ERR",

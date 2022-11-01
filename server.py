@@ -1,7 +1,7 @@
 from queue import Queue
 from socket import *
 import sys
-from threading import Thread, active_count
+from threading import Thread
 import json
 from datetime import datetime
 from data_templates import templates
@@ -130,14 +130,13 @@ class ClientThread(Thread):
                     self.handle_auth()
                 elif client_data["command"] == "UDP":
                     self.handle_receive_udp_info(client_data)
+                elif client_data["command"] == "UED":
+                    self.handle_ued(client_data)
                 # terminate the thread
                 elif client_data["command"] == "OUT":
                     self.handle_close()
                     return
 
-                if client_data == "FIN":
-                    self.is_active = False
-                    break
             except Exception as e:
                 print(e.message)
                 self.handle_close()
@@ -212,6 +211,8 @@ class ClientThread(Thread):
         print(
             f"Closing connection to client on {self.client_address} with device name {self.client_name}"
         )
+        new_task = {"task": "OUT", "data": (self.client_name)}
+        self.server.queue.put(new_task)
         response = templates["OUT_OK"]
         response["message"] = f"Goodbye, {self.client_name}"
         self.send_data(response)
@@ -245,6 +246,23 @@ class ClientThread(Thread):
         }
         self.server.queue.put(new_task)
 
+    def handle_ued(self, client_data):
+        # device_name, timestamp, fileid, dataamount
+        data = client_data["data"]
+        file_id = client_data["file_id"]
+        data_amount = len(data)
+        timestamp = self.server.format_date(datetime.now())
+        new_task = {
+            "task": "UED_UPLOAD",
+            "data": (data, self.client_name, timestamp, file_id, data_amount),
+        }
+        self.server.queue.put(new_task)
+        message = templates["UED_OK"]
+        message[
+            "message"
+        ] = f"Server has received and uploaded {self.client_name}-{file_id}.txt"
+        self.send_data(message)
+
 
 class FileWriter(Thread):
     def __init__(self, server: Server):
@@ -254,6 +272,7 @@ class FileWriter(Thread):
     # some code taken from the official python site on how to use Queue
     # https://docs.python.org/3/library/queue.html
     def run(self):
+        self.initialize_files()
         try:
             while True:
                 if not self.server.queue.empty():
@@ -262,9 +281,18 @@ class FileWriter(Thread):
         except (KeyboardInterrupt, SystemExit):
             return
 
+    def initialize_files(self):
+        # open the file and erase the contents on start-up
+        with open("server/cse-edge-device-log.txt", "w") as file1:
+            pass
+
     def handle_tasks(self, task):
         if task["task"] == "UDP_UPLOAD":
             self.handle_udp_upload(task["data"])
+        elif task["task"] == "UED_UPLOAD":
+            self.handle_eud_upload(task["data"])
+        elif task["task"] == "OUT":
+            self.handle_close_client(task["data"])
 
     def handle_udp_upload(self, data):
         timestamp, device_name, device_ip, udp_port = data
@@ -272,8 +300,51 @@ class FileWriter(Thread):
             # get the last sequence number
             highest_sequence = len(file.readlines())
             file.write(
-                f"{highest_sequence + 1}; {timestamp}; {device_name}; {device_ip}; {udp_port} \n"
+                f"{highest_sequence + 1}; {timestamp}; {device_name}; {device_ip}; {udp_port}\n"
             )
+            print("cse-edge-device-log.txt file has been updated")
+
+    def handle_eud_upload(self, data):
+        client_data, client_name, timestamp, file_id, data_amount = data
+        filename = f"{client_name}-{file_id}.txt"
+        with open(f"server/{filename}", "w") as file:
+            for number in client_data:
+                file.write(f"{number}")
+        print(
+            f"Data file has been received from {client_name} and uploaded as {filename}"
+        )
+        with open("server/upload-log.txt", "a") as file:
+            file.write(
+                f"{client_name}; {timestamp}; {file_id}; {data_amount}\n"
+            )
+        print("upload-log.txt file has been updated")
+
+    def handle_close_client(self, data):
+        client_name = data
+        active_devices = []
+        with open("server/cse-edge-device-log.txt", "r+") as file:
+            # write the file contents to memory without sequence numbers. exclude
+            # the device being logged out
+            for line in file:
+                _, timestamp, device_name, device_ip, udp_port = line.split(
+                    "; "
+                )
+                # skip device name logging out
+                if device_name == client_name:
+                    continue
+                active_devices.append(
+                    (timestamp, device_name, device_ip, udp_port)
+                )
+            # go back to start of the file
+            file.truncate(0)
+            file.seek(0, 0)
+            # update sequence numbers
+            for count, value in enumerate(active_devices):
+                timestamp, device_name, device_ip, udp_port = value
+                file.write(
+                    f"{count + 1}; {timestamp}; {device_name}; {device_ip}; {udp_port}"
+                )
+            print("cse-edge-device-log.txt file has been updated")
 
 
 class ClientBannedException(Exception):
