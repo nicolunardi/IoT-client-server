@@ -1,3 +1,4 @@
+from math import inf
 from queue import Queue
 from socket import *
 import sys
@@ -23,7 +24,6 @@ class Server:
         self.start()
 
     def start(self):
-        # TODO create all the files from scratch when server boots
         try:
             # set up the socket and start listening for incoming connections
             self.server_socket.bind(self.address)
@@ -103,7 +103,7 @@ class Server:
 
     def close_server(self):
         print()
-        print("Server is shutting down...")
+        print("server is shutting down...")
         self.server_socket.close()
         sys.exit(0)
 
@@ -132,6 +132,8 @@ class ClientThread(Thread):
                     self.handle_receive_udp_info(client_data)
                 elif client_data["command"] == "UED":
                     self.handle_ued(client_data)
+                elif client_data["command"] == "SCS":
+                    self.handle_scs(client_data)
                 # terminate the thread
                 elif client_data["command"] == "OUT":
                     self.handle_close()
@@ -149,7 +151,7 @@ class ClientThread(Thread):
             chunk = self.client_socket.recv(BUFF_SIZE)
             client_data += chunk
             if len(chunk) < BUFF_SIZE:
-                print(json.loads(client_data))
+                # print(json.loads(client_data))
                 return json.loads(client_data)
 
     def handle_auth(self):
@@ -169,6 +171,7 @@ class ClientThread(Thread):
                     else:
                         self.client_name = username
                         self.send_data(templates["AUTH_OK"])
+                        print(f"{username} has connected from address {self.client_address[0]}")
                     return
                 elif validity == "AUTH_INV_PASS":
                     # check to see if the user has been banned
@@ -204,12 +207,12 @@ class ClientThread(Thread):
 
     # sends data to client. converts dict to json string and then to bytes
     def send_data(self, data):
-        print("sending, ", data)
+        # print("sending, ", data)
         self.client_socket.sendall(json.dumps(data).encode())
 
     def handle_close(self):
         print(
-            f"Closing connection to client on {self.client_address} with device name {self.client_name}"
+            f"closing connection to client on {self.client_address} with device name {self.client_name}"
         )
         new_task = {"task": "OUT", "data": (self.client_name)}
         self.server.queue.put(new_task)
@@ -263,6 +266,50 @@ class ClientThread(Thread):
         ] = f"Server has received and uploaded {self.client_name}-{file_id}.txt"
         self.send_data(message)
 
+    def handle_scs(self, client_data):
+        file_id = client_data["data"][0]
+        computation = client_data["data"][1]
+        filename = f"{self.client_name}-{file_id}.txt"
+
+        print(
+            f"{self.client_name} requested a computation on the file with ID of {file_id}"
+        )
+        max = -inf
+        min = inf
+        count = 0
+        sum = 0
+        try:
+            with open(f"server/{filename}", "r") as file:
+                for line in file:
+                    count += 1
+                    number = int(line)
+                    sum += number
+                    if number > max:
+                        max = number
+                    if number < min:
+                        min = number
+        except FileNotFoundError:
+            print(f"a file with the filename '{filename}' does not exist.")
+            self.send_data(templates["SCS_INV"])
+            return
+
+        average = sum / count
+        result = 0
+        if computation == "MAX":
+            result = max
+        elif computation == "MIN":
+            result = min
+        elif computation == "AVERAGE":
+            result = average
+        elif computation == "SUM":
+            result = sum
+
+        response = templates["SCS_OK"]
+        response[
+            "message"
+        ] = f"The {computation} on the file with ID of {file_id} is: {result}"
+        self.send_data(response)
+
 
 class FileWriter(Thread):
     def __init__(self, server: Server):
@@ -311,7 +358,7 @@ class FileWriter(Thread):
             for number in client_data:
                 file.write(f"{number}")
         print(
-            f"Data file has been received from {client_name} and uploaded as {filename}"
+            f"data file has been received from {client_name} and uploaded as {filename}"
         )
         with open("server/upload-log.txt", "a") as file:
             file.write(
@@ -373,7 +420,7 @@ def verify_correct_usage(argv):
         or (not (argv[2].isdigit()) or not (1 <= int(argv[2]) <= 5))
     ):
         print(
-            "Correct usage: python3 server.py [server_port] [number_of_failed_attempts]"
+            "correct usage: python3 server.py [server_port] [number_of_failed_attempts]"
         )
         correct_usage = False
 

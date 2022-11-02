@@ -110,6 +110,15 @@ def handle_commands(client_socket: socket):
                 handle_edg(user_input)
             elif command == "UED":
                 handle_ued(user_input, client_socket)
+            elif command == "SCS":
+                handle_scs(user_input, client_socket)
+            # elif command == "AED":
+            #     handle_aed(user_input, client_socket)
+            # elif command == "DTE":
+            #     handle_dte(user_input, client_socket)
+            # elif command == "UVF":
+            #     handle_uvf(user_input, client_socket)
+
             elif command == "OUT":
                 handle_out(client_socket)
 
@@ -153,7 +162,8 @@ def handle_auth(client_socket: socket):
             elif server_data["command"] == "AUTH_INV_USER":
                 print(server_data["message"])
                 # get a new username and password from the user and update the auth_data object
-                auth_data["data"]["username"] = get_username()
+                username = get_username()
+                auth_data["data"]["username"] = username
                 auth_data["data"]["password"] = get_password()
                 send_data(auth_data, client_socket)
             elif server_data["command"] == "AUTH_INV_BAN":
@@ -259,6 +269,30 @@ def handle_ued(user_input, client_socket: socket):
         print(server_message["message"])
     except FileNotFoundError:
         print("a file with that ID does not exist. Please try another ID")
+
+
+def handle_scs(user_input, client_socket: socket):
+    computations = ("SUM", "AVERAGE", "MIN", "MAX")
+    if len(user_input) != 3:
+        print("Correct usage: SCS [fileID] [computation]")
+        return
+
+    # TODO check that the fileid is an int
+    file_id = user_input[1]
+    computation = user_input[2]
+
+    # check the computation requested is valid
+    if not computation in computations:
+        print("invalid computation. Please choose from one of the following:")
+        print("    SUM, AVERAGE, MIN, MAX")
+        return
+
+    message = templates["SCS"]
+    message["data"] = [file_id, computation]
+
+    send_data(message, client_socket)
+    response = receive_data(client_socket)
+    print(response["message"])
 
 
 def handle_out(client_socket: socket):
