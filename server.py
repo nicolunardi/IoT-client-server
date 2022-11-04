@@ -2,6 +2,7 @@ from math import inf
 from queue import Queue
 from socket import *
 import sys
+import os
 from threading import Thread
 import json
 from datetime import datetime
@@ -134,6 +135,10 @@ class ClientThread(Thread):
                     self.handle_ued(client_data)
                 elif client_data["command"] == "SCS":
                     self.handle_scs(client_data)
+                elif client_data["command"] == "DTE":
+                    self.handle_dte(client_data)
+                elif client_data["command"] == "AED":
+                    self.handle_aed(client_data)
                 # terminate the thread
                 elif client_data["command"] == "OUT":
                     self.handle_close()
@@ -171,7 +176,9 @@ class ClientThread(Thread):
                     else:
                         self.client_name = username
                         self.send_data(templates["AUTH_OK"])
-                        print(f"{username} has connected from address {self.client_address[0]}")
+                        print(
+                            f"{username} has connected from address {self.client_address[0]}"
+                        )
                     return
                 elif validity == "AUTH_INV_PASS":
                     # check to see if the user has been banned
@@ -289,7 +296,7 @@ class ClientThread(Thread):
                     if number < min:
                         min = number
         except FileNotFoundError:
-            print(f"a file with the filename '{filename}' does not exist.")
+            print(f"a file with the file_id '{file_id}' does not exist.")
             self.send_data(templates["SCS_INV"])
             return
 
@@ -308,6 +315,62 @@ class ClientThread(Thread):
         response[
             "message"
         ] = f"The {computation} on the file with ID of {file_id} is: {result}"
+        self.send_data(response)
+
+    def handle_dte(self, client_data):
+        file_id = client_data["data"]
+        filename = f"{self.client_name}-{file_id}.txt"
+        data_amount = 0
+        print(
+            f"{self.client_name} requested that a file with id {file_id} be deleted"
+        )
+
+        try:
+            # get the dataAmount of the file that is to be deleted
+            with open(f"server/{filename}", "r") as file:
+                data_amount = len(file.readlines())
+
+            os.remove(f"server/{filename}")
+        except FileNotFoundError:
+            print(f"a file with the fileID '{file_id}' does not exist.")
+            self.send_data(templates["DTE_INV"])
+            return
+
+        # update the deletion log file
+        timestamp = self.server.format_date(datetime.now())
+        new_task = {
+            "task": "DTE_LOG",
+            "data": (self.client_name, timestamp, file_id, data_amount),
+        }
+        # send the task to the fileWriter
+        self.server.queue.put(new_task)
+
+        response = templates["DTE_OK"]
+        response[
+            "message"
+        ] = f"a file with file id {file_id} has been successfully deleted on the server"
+        self.send_data(response)
+
+    def handle_aed(self, client_data):
+        active_devices = []
+        message = ""
+        with open("server/cse-edge-device-log.txt", "r") as file:
+            for line in file:
+                # filter out the current user
+                data = line.split("; ")
+                if not data[2] == self.client_name:
+                    active_devices.append(data)
+
+        if not len(active_devices):
+            message = "there are currently no active devices"
+        else:
+            # create the list of active devices to send back to the client
+            for device in active_devices:
+                _, timestamp, client_name, ip_address, udp_port = device
+                message += f"- {client_name}; {ip_address}; {udp_port};  active since {timestamp}.\n"
+
+        response = templates["AED_OK"]
+        response["message"] = message
         self.send_data(response)
 
 
@@ -338,6 +401,8 @@ class FileWriter(Thread):
             self.handle_udp_upload(task["data"])
         elif task["task"] == "UED_UPLOAD":
             self.handle_eud_upload(task["data"])
+        elif task["task"] == "DTE_LOG":
+            self.handle_dte_log(task["data"])
         elif task["task"] == "OUT":
             self.handle_close_client(task["data"])
 
@@ -365,6 +430,16 @@ class FileWriter(Thread):
                 f"{client_name}; {timestamp}; {file_id}; {data_amount}\n"
             )
         print("upload-log.txt file has been updated")
+
+    def handle_dte_log(self, data):
+        client_name, timestamp, file_id, data_amount = data
+        filename = f"{client_name}-{file_id}.txt"
+
+        with open("server/deletion-log.txt", "a") as file:
+            file.write(
+                f"{client_name}; {timestamp}; {file_id}; {data_amount}\n"
+            )
+        print("deletion-log.txt file has been updated")
 
     def handle_close_client(self, data):
         client_name = data

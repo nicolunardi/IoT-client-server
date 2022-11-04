@@ -8,9 +8,11 @@ templates = {
     "UDP": {"command": "UDP"},
     "UED": {"command": "UED"},
     "SCS": {"command": "SCS"},
+    "DTE": {"command": "DTE"},
+    "AED": {"command": "AED"},
     "OUT": {"command": "OUT"},
     # server
-    "SYN_OK": {"command": "SYN_OK", "message": "P\please log in"},
+    "SYN_OK": {"command": "SYN_OK", "message": "please log in"},
     "AUTH_INV_PASS": {
         "command": "AUTH_INV_PASS",
         "message": "invalid password. please try again",
@@ -32,6 +34,12 @@ templates = {
     "SCS_OK": {"command": "SCS_OK"},
     "SCS_INV": {
         "command": "SCS_INV",
+        "message": "a file with that file ID does not exist on the server, please try another number",
+    },
+    "AED_OK": {"command": "AED_OK"},
+    "DTE_OK": {"command": "DTE_OK"},
+    "DTE_INV": {
+        "command": "DTE_INV",
         "message": "a file with that file ID does not exist on the server, please try another number",
     },
     "OUT_OK": {"command": "OUT_OK"},

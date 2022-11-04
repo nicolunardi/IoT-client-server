@@ -1,3 +1,4 @@
+from curses.ascii import isdigit
 from socket import *
 import sys
 import json
@@ -112,10 +113,10 @@ def handle_commands(client_socket: socket):
                 handle_ued(user_input, client_socket)
             elif command == "SCS":
                 handle_scs(user_input, client_socket)
-            # elif command == "AED":
-            #     handle_aed(user_input, client_socket)
-            # elif command == "DTE":
-            #     handle_dte(user_input, client_socket)
+            elif command == "AED":
+                handle_aed(client_socket)
+            elif command == "DTE":
+                handle_dte(user_input, client_socket)
             # elif command == "UVF":
             #     handle_uvf(user_input, client_socket)
 
@@ -291,6 +292,29 @@ def handle_scs(user_input, client_socket: socket):
     message["data"] = [file_id, computation]
 
     send_data(message, client_socket)
+    response = receive_data(client_socket)
+    print(response["message"])
+
+
+def handle_dte(user_input, client_socket: socket):
+    file_id = user_input[1]
+    if len(user_input) != 2:
+        print("Correct usage: DTE [fileID]")
+        return
+    if not isdigit(file_id):
+        print("fileID must be an integer")
+        return
+
+    message = templates["DTE"]
+    message["data"] = file_id
+
+    send_data(message, client_socket)
+    response = receive_data(client_socket)
+    print(response["message"])
+
+
+def handle_aed(client_socket: socket):
+    send_data(templates["AED"], client_socket)
     response = receive_data(client_socket)
     print(response["message"])
 
