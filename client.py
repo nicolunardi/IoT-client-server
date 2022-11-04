@@ -1,12 +1,99 @@
-from curses.ascii import isdigit
 from socket import *
 import sys
+import os
 import json
+from threading import Thread
+from math import ceil
 from data_templates import templates
 
 FORMAT = "utf-8"
+UDP_CHUNK_SIZE = 900
 BUFF_SIZE = 1024
+TIMEOUT = 1
 device_name = ""
+
+
+class UdpSocketThread(Thread):
+    def __init__(
+        self,
+        port,
+    ):
+        Thread.__init__(self)
+        self.address = ("", port)
+        self.udp_socket = socket(AF_INET, SOCK_DGRAM)
+        self.udp_socket.settimeout(TIMEOUT)
+
+    def run(self):
+        try:
+            # set up the socket and start listening for incoming connections
+            self.udp_socket.bind(self.address)
+            print("udp server running")
+            # while True:
+        except KeyboardInterrupt:
+            self.udp_socket.close()
+
+        # self.receive_udp_file(self):
+
+    def send_file(self, filename, address):
+        try:
+            with open(f"client/{filename}", "rb") as file:
+                # total size of the file to be transferred
+                total_size = os.path.getsize(f"client/{filename}")
+                # number of chunks that the file will be divided into
+                number_of_chunks = ceil(total_size / UDP_CHUNK_SIZE)
+                curr_chunk = 0
+                while True:
+                    chunk = file.read(UDP_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    message = {
+                        "owner": device_name,
+                        "filename": filename,
+                        "total_chunks": number_of_chunks,
+                        "chunk_number": curr_chunk,
+                        "chunk": chunk,
+                    }
+                    chunk += 1
+
+                    self.udp_socket.sendto(
+                        json.dumps(message).encode(),
+                        address,
+                    )
+
+        except FileNotFoundError:
+            print("no file exists with that filename")
+            return
+
+    def receive_udp_file(self):
+        data = {}
+        total_chunks = 0
+        filename = ""
+        owner = ""
+        while True:
+            self.udp_socket.settimeout(1)
+            try:
+                message, address = self.udp_socket.recvfrom(BUFF_SIZE)
+                self.udp_socket.settimeout(TIMEOUT)
+                decoded_message = json.loads(message)
+
+                total_chunks = decoded_message["total_chunks"]
+                chunk_number = decoded_message["chunk_number"]
+                chunk = decoded_message["chunk"]
+                filename = decoded_message["filename"]
+                owner = decoded_message["owner"]
+
+                data[chunk_number] = chunk
+            except timeout:
+                full_file = self.assemble_chunks(data, total_chunks)
+                with open(f"client/{owner}-{filename}", "wb") as file:
+                    file.write(full_file)
+
+    def assemble_chunks(self, chunks: dict, total_chunks: int):
+        assembled_file = b""
+        for i in range(total_chunks):
+            assembled_file += chunks[i]
+
+        return assembled_file
 
 
 def main(argv):
@@ -24,11 +111,13 @@ def main(argv):
     client_socket = create_tcp_socket((server_ip, server_port))
     # initialize authentication
     handle_auth(client_socket)
+    # initialize udp socket
+    udp_socket = UdpSocketThread(client_udp_port)
 
     # upon successful authentication, send the UDP port to the server
     send_udp_port(client_udp_port, client_socket)
 
-    handle_commands(client_socket)
+    handle_commands(client_socket, udp_socket)
 
 
 def verify_correct_usage(argv):
@@ -96,7 +185,7 @@ def get_credentials():
     return (username.strip(), password)
 
 
-def handle_commands(client_socket: socket):
+def handle_commands(client_socket: socket, udp_socket):
     commands = ["EDG", "UED", "SCS", "DTE", "AED", "OUT"]
     while True:
         user_input = input(
@@ -301,7 +390,7 @@ def handle_dte(user_input, client_socket: socket):
     if len(user_input) != 2:
         print("Correct usage: DTE [fileID]")
         return
-    if not isdigit(file_id):
+    if not file_id.isdigit():
         print("fileID must be an integer")
         return
 
@@ -324,6 +413,7 @@ def handle_out(client_socket: socket):
     data = receive_data(client_socket)
     if data["command"] == "OUT_OK":
         print(data["message"])
+        client_socket.close()
         sys.exit(0)
 
 
