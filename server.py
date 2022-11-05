@@ -368,7 +368,7 @@ class ClientThread(Thread):
             # create the list of active devices to send back to the client
             for device in active_devices:
                 _, timestamp, client_name, ip_address, udp_port = device
-                message += f"- {client_name}; {ip_address}; {udp_port}; active since {timestamp}.\n"
+                message += f"- {client_name}; {ip_address}; {int(udp_port)}; active since {timestamp}.\n"
 
         response = templates["AED_OK"]
         response["message"] = message

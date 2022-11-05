@@ -58,14 +58,13 @@ class UdpSocketThread(Thread):
                         chunk,
                         address,
                     )
-        # UVF test1 example2.mp4
+            print(f"{filename} has been uploaded")
+
         except FileNotFoundError:
             print("no file exists with that filename")
             return
 
     def receive_udp_file(self):
-        data = {}
-        total_chunks = 0
         filename = ""
         owner = ""
         full_file = b""
@@ -75,7 +74,6 @@ class UdpSocketThread(Thread):
             try:
                 message, address = self.udp_socket.recvfrom(BUFF_SIZE)
                 self.udp_socket.settimeout(TIMEOUT)
-                print(message)
 
                 try:
                     # get information about the file
@@ -91,6 +89,15 @@ class UdpSocketThread(Thread):
                 if full_file:
                     with open(f"client/{owner}-{filename}", "wb") as file:
                         file.write(full_file)
+                    print(f"\nreceived '{filename}' from {owner} ")
+                    # reset values
+                    full_file = b""
+                    filename = ""
+                    owner = ""
+                    # get the prompt back on the terminal
+                    print(
+                        "Enter one of the following commands (EDG, UED, SCS, DTE, AED, UVF, OUT): "
+                    )
 
 
 def main(argv):
@@ -188,7 +195,7 @@ def handle_commands(client_socket: socket, udp_socket):
     commands = ["EDG", "UED", "SCS", "DTE", "AED", "UVF", "OUT"]
     while True:
         user_input = input(
-            "Enter one of the following commands (EDG, UED, SCS, DTE, AED, OUT): "
+            "Enter one of the following commands (EDG, UED, SCS, DTE, AED, UVF, OUT): "
         ).split()
         # ensure a valid command is entered
         command = user_input[0]
