@@ -1,4 +1,5 @@
 from math import inf
+import base64
 from queue import Queue
 from socket import *
 import sys
@@ -10,7 +11,7 @@ from data_templates import templates
 
 FORMAT = "utf-8"
 SERVER_IP = "127.0.0.1"
-BUFF_SIZE = 1024
+BUFF_SIZE = 2048
 
 
 class Server:
@@ -367,10 +368,11 @@ class ClientThread(Thread):
             # create the list of active devices to send back to the client
             for device in active_devices:
                 _, timestamp, client_name, ip_address, udp_port = device
-                message += f"- {client_name}; {ip_address}; {udp_port};  active since {timestamp}.\n"
+                message += f"- {client_name}; {ip_address}; {udp_port}; active since {timestamp}.\n"
 
         response = templates["AED_OK"]
         response["message"] = message
+        response["data"] = active_devices
         self.send_data(response)
 
 

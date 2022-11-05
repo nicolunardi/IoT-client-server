@@ -1,15 +1,17 @@
 from socket import *
+import base64
 import sys
 import os
 import json
 from threading import Thread
 from math import ceil
+from time import sleep
 from data_templates import templates
 
 FORMAT = "utf-8"
-UDP_CHUNK_SIZE = 900
-BUFF_SIZE = 1024
-TIMEOUT = 1
+UDP_CHUNK_SIZE = 1024
+BUFF_SIZE = 2048
+TIMEOUT = 3
 device_name = ""
 
 
@@ -28,38 +30,35 @@ class UdpSocketThread(Thread):
             # set up the socket and start listening for incoming connections
             self.udp_socket.bind(self.address)
             print("udp server running")
-            # while True:
+            while True:
+                self.receive_udp_file()
         except KeyboardInterrupt:
             self.udp_socket.close()
 
-        # self.receive_udp_file(self):
-
     def send_file(self, filename, address):
         try:
+            # send the file information
+            message = {
+                "owner": device_name,
+                "filename": filename,
+            }
+            self.udp_socket.sendto(
+                json.dumps(message).encode(),
+                address,
+            )
             with open(f"client/{filename}", "rb") as file:
-                # total size of the file to be transferred
-                total_size = os.path.getsize(f"client/{filename}")
-                # number of chunks that the file will be divided into
-                number_of_chunks = ceil(total_size / UDP_CHUNK_SIZE)
-                curr_chunk = 0
                 while True:
                     chunk = file.read(UDP_CHUNK_SIZE)
                     if not chunk:
                         break
-                    message = {
-                        "owner": device_name,
-                        "filename": filename,
-                        "total_chunks": number_of_chunks,
-                        "chunk_number": curr_chunk,
-                        "chunk": chunk,
-                    }
-                    chunk += 1
+                    # throttle the transmission
+                    sleep(0.005)
 
                     self.udp_socket.sendto(
-                        json.dumps(message).encode(),
+                        chunk,
                         address,
                     )
-
+        # UVF test1 example2.mp4
         except FileNotFoundError:
             print("no file exists with that filename")
             return
@@ -69,31 +68,29 @@ class UdpSocketThread(Thread):
         total_chunks = 0
         filename = ""
         owner = ""
+        full_file = b""
+
         while True:
             self.udp_socket.settimeout(1)
             try:
                 message, address = self.udp_socket.recvfrom(BUFF_SIZE)
                 self.udp_socket.settimeout(TIMEOUT)
-                decoded_message = json.loads(message)
+                print(message)
 
-                total_chunks = decoded_message["total_chunks"]
-                chunk_number = decoded_message["chunk_number"]
-                chunk = decoded_message["chunk"]
-                filename = decoded_message["filename"]
-                owner = decoded_message["owner"]
+                try:
+                    # get information about the file
+                    decoded_message = json.loads(message)
+                    filename = decoded_message["filename"]
+                    owner = decoded_message["owner"]
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    # if its not a json format then its the files raw bites
+                    full_file += message
 
-                data[chunk_number] = chunk
+            # when no more chunks are coming in
             except timeout:
-                full_file = self.assemble_chunks(data, total_chunks)
-                with open(f"client/{owner}-{filename}", "wb") as file:
-                    file.write(full_file)
-
-    def assemble_chunks(self, chunks: dict, total_chunks: int):
-        assembled_file = b""
-        for i in range(total_chunks):
-            assembled_file += chunks[i]
-
-        return assembled_file
+                if full_file:
+                    with open(f"client/{owner}-{filename}", "wb") as file:
+                        file.write(full_file)
 
 
 def main(argv):
@@ -113,6 +110,8 @@ def main(argv):
     handle_auth(client_socket)
     # initialize udp socket
     udp_socket = UdpSocketThread(client_udp_port)
+    udp_socket.daemon = True
+    udp_socket.start()
 
     # upon successful authentication, send the UDP port to the server
     send_udp_port(client_udp_port, client_socket)
@@ -186,7 +185,7 @@ def get_credentials():
 
 
 def handle_commands(client_socket: socket, udp_socket):
-    commands = ["EDG", "UED", "SCS", "DTE", "AED", "OUT"]
+    commands = ["EDG", "UED", "SCS", "DTE", "AED", "UVF", "OUT"]
     while True:
         user_input = input(
             "Enter one of the following commands (EDG, UED, SCS, DTE, AED, OUT): "
@@ -206,8 +205,8 @@ def handle_commands(client_socket: socket, udp_socket):
                 handle_aed(client_socket)
             elif command == "DTE":
                 handle_dte(user_input, client_socket)
-            # elif command == "UVF":
-            #     handle_uvf(user_input, client_socket)
+            elif command == "UVF":
+                handle_uvf(user_input, udp_socket, client_socket)
 
             elif command == "OUT":
                 handle_out(client_socket)
@@ -364,7 +363,7 @@ def handle_ued(user_input, client_socket: socket):
 def handle_scs(user_input, client_socket: socket):
     computations = ("SUM", "AVERAGE", "MIN", "MAX")
     if len(user_input) != 3:
-        print("Correct usage: SCS [fileID] [computation]")
+        print("correct usage: SCS [fileID] [computation]")
         return
 
     # TODO check that the fileid is an int
@@ -388,7 +387,7 @@ def handle_scs(user_input, client_socket: socket):
 def handle_dte(user_input, client_socket: socket):
     file_id = user_input[1]
     if len(user_input) != 2:
-        print("Correct usage: DTE [fileID]")
+        print("correct usage: DTE [fileID]")
         return
     if not file_id.isdigit():
         print("fileID must be an integer")
@@ -402,10 +401,46 @@ def handle_dte(user_input, client_socket: socket):
     print(response["message"])
 
 
-def handle_aed(client_socket: socket):
+def handle_uvf(user_input, udp_socket: UdpSocketThread, client_socket: socket):
+    if len(user_input) != 3:
+        print("correct usage: UVF [deviceName] [filename]")
+        return
+
+    _, device_name, filename = user_input
+
+    if not os.path.exists(f"client/{filename}"):
+        print(f"a file with the file name '{filename}' does not exist")
+        return
+
+    device_data = None
+    # dont print the devices on the terminal
+    active_devices = handle_aed(client_socket, display=False)
+
+    if not active_devices:
+        print("that device is not currently active. please try again later.")
+        return
+
+    # check the device the user wants to send a file to is active
+    for device in active_devices:
+        if device[2] == device_name:
+            device_data = device
+
+    if not device_data:
+        print("that device is not currently active. please try again later.")
+        return
+
+    device_address = (device_data[3], int(device_data[4]))
+    udp_socket.send_file(filename, device_address)
+
+
+# prints the active devices to the terminal and returns the list of active devices
+# for use in UVF
+def handle_aed(client_socket: socket, display=True):
     send_data(templates["AED"], client_socket)
     response = receive_data(client_socket)
-    print(response["message"])
+    if display:
+        print(response["message"])
+    return response["data"]
 
 
 def handle_out(client_socket: socket):
