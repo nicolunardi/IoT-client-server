@@ -1,5 +1,4 @@
 from math import inf
-import base64
 from queue import Queue
 from socket import *
 import sys
@@ -30,7 +29,7 @@ class Server:
             # set up the socket and start listening for incoming connections
             self.server_socket.bind(self.address)
             self.server_socket.listen(5)
-            print(f"listening on port {self.port}")
+            print(f"[Server]: Listening on port {self.port}")
 
             # create a file writer thread
             self.initialize_file_writer()
@@ -38,7 +37,7 @@ class Server:
             # accept incoming connections
             self.receive_client()
             # self.server_socket.close()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt):
             self.close_server()
 
     # create and initialize the file writer thread
@@ -105,7 +104,7 @@ class Server:
 
     def close_server(self):
         print()
-        print("server is shutting down...")
+        print("[Server]: Server is shutting down...")
         self.server_socket.close()
         sys.exit(0)
 
@@ -157,7 +156,6 @@ class ClientThread(Thread):
             chunk = self.client_socket.recv(BUFF_SIZE)
             client_data += chunk
             if len(chunk) < BUFF_SIZE:
-                # print(json.loads(client_data))
                 return json.loads(client_data)
 
     def handle_auth(self):
@@ -178,7 +176,7 @@ class ClientThread(Thread):
                         self.client_name = username
                         self.send_data(templates["AUTH_OK"])
                         print(
-                            f"{username} has connected from address {self.client_address[0]}"
+                            f"[Server]: {username} has connected from address {self.client_address[0]}"
                         )
                     return
                 elif validity == "AUTH_INV_PASS":
@@ -215,17 +213,16 @@ class ClientThread(Thread):
 
     # sends data to client. converts dict to json string and then to bytes
     def send_data(self, data):
-        # print("sending, ", data)
         self.client_socket.sendall(json.dumps(data).encode())
 
     def handle_close(self):
         print(
-            f"closing connection to client on {self.client_address} with device name {self.client_name}"
+            f"[Server]: Closing connection to client on {self.client_address} with device name {self.client_name}"
         )
         new_task = {"task": "OUT", "data": (self.client_name)}
         self.server.queue.put(new_task)
         response = templates["OUT_OK"]
-        response["message"] = f"Goodbye, {self.client_name}"
+        response["message"] = f"[Server]: Goodbye, {self.client_name}"
         self.send_data(response)
 
     # checks the credentials file against the credentials provided by the user.
@@ -263,6 +260,9 @@ class ClientThread(Thread):
         file_id = client_data["file_id"]
         data_amount = len(data)
         timestamp = self.server.format_date(datetime.now())
+        print(
+            f"[Server]: {self.client_name} issued a UED command with fileID {file_id} and amount {data_amount}"
+        )
         new_task = {
             "task": "UED_UPLOAD",
             "data": (data, self.client_name, timestamp, file_id, data_amount),
@@ -271,7 +271,7 @@ class ClientThread(Thread):
         message = templates["UED_OK"]
         message[
             "message"
-        ] = f"Server has received and uploaded {self.client_name}-{file_id}.txt"
+        ] = f"[Server]: Server has received and uploaded '{self.client_name}-{file_id}.txt'"
         self.send_data(message)
 
     def handle_scs(self, client_data):
@@ -280,7 +280,7 @@ class ClientThread(Thread):
         filename = f"{self.client_name}-{file_id}.txt"
 
         print(
-            f"{self.client_name} requested a computation on the file with ID of {file_id}"
+            f"[Server]: {self.client_name} requested a computation on the file with ID of {file_id}"
         )
         max = -inf
         min = inf
@@ -297,7 +297,9 @@ class ClientThread(Thread):
                     if number < min:
                         min = number
         except FileNotFoundError:
-            print(f"a file with the file_id '{file_id}' does not exist.")
+            print(
+                f"[Server]: A file with the file_id '{file_id}' does not exist"
+            )
             self.send_data(templates["SCS_INV"])
             return
 
@@ -315,7 +317,7 @@ class ClientThread(Thread):
         response = templates["SCS_OK"]
         response[
             "message"
-        ] = f"The {computation} on the file with ID of {file_id} is: {result}"
+        ] = f"[Server]: The {computation} on the file with ID of {file_id} is: {result}"
         self.send_data(response)
 
     def handle_dte(self, client_data):
@@ -323,7 +325,7 @@ class ClientThread(Thread):
         filename = f"{self.client_name}-{file_id}.txt"
         data_amount = 0
         print(
-            f"{self.client_name} requested that a file with id {file_id} be deleted"
+            f"[Server]: {self.client_name} requested that a file with id {file_id} be deleted"
         )
 
         try:
@@ -333,7 +335,7 @@ class ClientThread(Thread):
 
             os.remove(f"server/{filename}")
         except FileNotFoundError:
-            print(f"a file with the fileID '{file_id}' does not exist.")
+            print(f"[Server]: A file with the fileID {file_id} does not exist")
             self.send_data(templates["DTE_INV"])
             return
 
@@ -349,10 +351,11 @@ class ClientThread(Thread):
         response = templates["DTE_OK"]
         response[
             "message"
-        ] = f"a file with file id {file_id} has been successfully deleted on the server"
+        ] = f"[Server]: A file with file id {file_id} has been successfully deleted on the server"
         self.send_data(response)
 
     def handle_aed(self, client_data):
+        print(f"[Server]: {self.client_name} has issued an AED command")
         active_devices = []
         message = ""
         with open("server/cse-edge-device-log.txt", "r") as file:
@@ -363,7 +366,7 @@ class ClientThread(Thread):
                     active_devices.append(data)
 
         if not len(active_devices):
-            message = "there are currently no active devices"
+            message = "[Server]: There are currently no active devices"
         else:
             # create the list of active devices to send back to the client
             for device in active_devices:
@@ -416,7 +419,7 @@ class FileWriter(Thread):
             file.write(
                 f"{highest_sequence + 1}; {timestamp}; {device_name}; {device_ip}; {udp_port}\n"
             )
-            print("cse-edge-device-log.txt file has been updated")
+            print("[Server]: 'cse-edge-device-log.txt' file has been updated")
 
     def handle_eud_upload(self, data):
         client_data, client_name, timestamp, file_id, data_amount = data
@@ -425,13 +428,13 @@ class FileWriter(Thread):
             for number in client_data:
                 file.write(f"{number}")
         print(
-            f"data file has been received from {client_name} and uploaded as {filename}"
+            f"[Server]: Data file has been received from {client_name} and uploaded as '{filename}'"
         )
         with open("server/upload-log.txt", "a") as file:
             file.write(
                 f"{client_name}; {timestamp}; {file_id}; {data_amount}\n"
             )
-        print("upload-log.txt file has been updated")
+        print("[Server]: 'upload-log.txt' file has been updated")
 
     def handle_dte_log(self, data):
         client_name, timestamp, file_id, data_amount = data
@@ -441,7 +444,7 @@ class FileWriter(Thread):
             file.write(
                 f"{client_name}; {timestamp}; {file_id}; {data_amount}\n"
             )
-        print("deletion-log.txt file has been updated")
+        print("[Server]: 'deletion-log.txt' file has been updated")
 
     def handle_close_client(self, data):
         client_name = data
@@ -468,7 +471,7 @@ class FileWriter(Thread):
                 file.write(
                     f"{count + 1}; {timestamp}; {device_name}; {device_ip}; {udp_port}"
                 )
-            print("cse-edge-device-log.txt file has been updated")
+            print("[Server]: 'cse-edge-device-log.txt' file has been updated")
 
 
 class ClientBannedException(Exception):
@@ -497,7 +500,7 @@ def verify_correct_usage(argv):
         or (not (argv[2].isdigit()) or not (1 <= int(argv[2]) <= 5))
     ):
         print(
-            "correct usage: python3 server.py [server_port] [number_of_failed_attempts]"
+            "Correct usage: python3 server.py [server_port] [number_of_failed_attempts]"
         )
         correct_usage = False
 

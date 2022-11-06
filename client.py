@@ -1,5 +1,4 @@
 from socket import *
-import base64
 import sys
 import os
 import json
@@ -8,7 +7,6 @@ from math import ceil
 from time import sleep
 from data_templates import templates
 
-FORMAT = "utf-8"
 UDP_CHUNK_SIZE = 1024
 BUFF_SIZE = 2048
 TIMEOUT = 3
@@ -29,10 +27,15 @@ class UdpSocketThread(Thread):
         try:
             # set up the socket and start listening for incoming connections
             self.udp_socket.bind(self.address)
-            print("udp server running")
+
             while True:
                 self.receive_udp_file()
         except KeyboardInterrupt:
+            self.udp_socket.close()
+        except OSError:
+            print(
+                f"[Client]: A process is already running on port {self.address[1]}. Try a different port number"
+            )
             self.udp_socket.close()
 
     def send_file(self, filename, address):
@@ -58,10 +61,10 @@ class UdpSocketThread(Thread):
                         chunk,
                         address,
                     )
-            print(f"{filename} has been uploaded")
+            print(f"[Client]: '{filename}' has been uploaded")
 
         except FileNotFoundError:
-            print("no file exists with that filename")
+            print("[Client]: No file exists with that filename")
             return
 
     def receive_udp_file(self):
@@ -89,7 +92,7 @@ class UdpSocketThread(Thread):
                 if full_file:
                     with open(f"client/{owner}-{filename}", "wb") as file:
                         file.write(full_file)
-                    print(f"\nreceived '{filename}' from {owner} ")
+                    print(f"\n[Client]: Received '{filename}' from {owner}")
                     # reset values
                     full_file = b""
                     filename = ""
@@ -102,23 +105,34 @@ class UdpSocketThread(Thread):
 
 def main(argv):
     # ensure the user is using the program correctly
+
     if not verify_correct_usage(argv):
         return
 
-    print("Welcome!")
+    print("[Client]: Welcome!")
 
     server_ip = argv[1]
     server_port = int(argv[2])
     client_udp_port = int(argv[3])
 
-    # create a socket and establish a connection to the server
-    client_socket = create_tcp_socket((server_ip, server_port))
-    # initialize authentication
-    handle_auth(client_socket)
+    # ensure the udp_port is available
+    if not is_port_available(("", client_udp_port)):
+        print(
+            f"[Client]: A process is already running on port {client_udp_port}. Try a different port number"
+        )
+        sys.exit(0)
+
     # initialize udp socket
+
     udp_socket = UdpSocketThread(client_udp_port)
     udp_socket.daemon = True
     udp_socket.start()
+
+    # create a socket and establish a connection to the server
+    client_socket = create_tcp_socket((server_ip, server_port))
+
+    # initialize authentication
+    handle_auth(client_socket)
 
     # upon successful authentication, send the UDP port to the server
     send_udp_port(client_udp_port, client_socket)
@@ -137,7 +151,7 @@ def verify_correct_usage(argv):
         or (not (1024 <= int(argv[3]) <= 65353))
     ):
         print(
-            "Correct usage: python3 client.py [server_ip] [server_port] [client_udp_server_port]"
+            "[Client]: Correct usage: python3 client.py [server_ip] [server_port] [client_udp_server_port]"
         )
         correct_usage = False
 
@@ -149,13 +163,13 @@ def create_tcp_socket(address):
     # create the TCP socket
     client_socket = socket(AF_INET, SOCK_STREAM)
 
-    print("Attempting to connect to server...")
+    print("[Client]: Attempting to connect to server...")
     # establish the connection with the server
     try:
         client_socket.connect(address)
     except ConnectionRefusedError:
         print(
-            f"Failed to connect to the server at IP {address[0]} on port {address[1]}"
+            f"[Client]: Failed to connect to the server at IP {address[0]} on port {address[1]}"
         )
         sys.exit(1)
 
@@ -172,7 +186,7 @@ def get_credentials():
         # ensure username is not blank and has no whitespace
         if not len(username) or (len(username.split()) > 1):
             print(
-                "Username must not be blank or have any whitespace. Please type a valid username."
+                "[Client]: Username must not be blank or have any whitespace. Please type a valid username."
             )
         else:
             valid = True
@@ -183,7 +197,7 @@ def get_credentials():
         # ensure password is not blank and has no whitespace
         if not len(password) or (len(password.split()) > 1):
             print(
-                "Password must not be blank or have any whitespace. Please type a valid password."
+                "[Client]: Password must not be blank or have any whitespace. Please type a valid password."
             )
         else:
             valid = True
@@ -191,7 +205,7 @@ def get_credentials():
     return (username.strip(), password)
 
 
-def handle_commands(client_socket: socket, udp_socket):
+def handle_commands(client_socket: socket, udp_socket: UdpSocketThread):
     commands = ["EDG", "UED", "SCS", "DTE", "AED", "UVF", "OUT"]
     while True:
         user_input = input(
@@ -200,7 +214,7 @@ def handle_commands(client_socket: socket, udp_socket):
         # ensure a valid command is entered
         command = user_input[0]
         if not command in commands:
-            print("Error. Invalid command!")
+            print("[Client]: Error. Invalid command!")
         else:
             if command == "EDG":
                 handle_edg(user_input)
@@ -214,7 +228,6 @@ def handle_commands(client_socket: socket, udp_socket):
                 handle_dte(user_input, client_socket)
             elif command == "UVF":
                 handle_uvf(user_input, udp_socket, client_socket)
-
             elif command == "OUT":
                 handle_out(client_socket)
 
@@ -290,7 +303,7 @@ def get_password():
         # ensure password is not blank and has no whitespace
         if not len(password) or (len(password.split()) > 1):
             print(
-                "Password must not be blank or have any whitespace. Please type a valid password."
+                "[Client]: Password must not be blank or have any whitespace. Please type a valid password."
             )
         else:
             valid = True
@@ -306,7 +319,7 @@ def get_username():
         # ensure username is not blank and has no whitespace
         if not len(username) or (len(username.split()) > 1):
             print(
-                "Username must not be blank or have any whitespace. Please type a valid username."
+                "[Client]: Username must not be blank or have any whitespace. Please type a valid username."
             )
         else:
             valid = True
@@ -323,7 +336,7 @@ def send_udp_port(udp_port: int, client_socket: socket):
 
 def handle_edg(user_input):
     if len(user_input) != 3:
-        print("Correct usage: EDG [fileID] [dataAmount]")
+        print("[Client]: Correct usage: EDG [fileID] [dataAmount]")
         return
 
     _, file_id, data_amount = user_input
@@ -331,23 +344,23 @@ def handle_edg(user_input):
     if (not file_id.isdigit() or not data_amount.isdigit()) or (
         not int(file_id) >= 0 or not int(data_amount) > 0
     ):
-        print("fileID and DataAmount must be integers of the form:")
-        print("fileID >= 0, dataAmount > 0")
+        print("[Client]: fileID and DataAmount must be integers of the form:")
+        print("    fileID >= 0, dataAmount > 0")
     else:
         filename = f"{device_name}-{file_id}.txt"
-        print(f"The edge device is generating {data_amount} data samples...")
+        print(f"[Client]: Generating {data_amount} data samples...")
 
         with open(f"client/{filename}", "w") as file:
             for i in range(int(data_amount)):
                 file.write(f"{i}\n")
         print(
-            f"Data generation done, {data_amount} data samples have been generated and stored in the file {filename}"
+            f"[Client]: Data generation done, {data_amount} data samples have been generated and stored in the file '{filename}'"
         )
 
 
 def handle_ued(user_input, client_socket: socket):
     if len(user_input) != 2:
-        print("Correct usage: UED [fileID]")
+        print("[Client]: Correct usage: UED [fileID]")
         return
 
     file_id = user_input[1]
@@ -364,22 +377,30 @@ def handle_ued(user_input, client_socket: socket):
         server_message = receive_data(client_socket)
         print(server_message["message"])
     except FileNotFoundError:
-        print("a file with that ID does not exist. Please try another ID")
+        print(
+            "[Client]: A file with that ID does not exist. Please try another ID"
+        )
 
 
 def handle_scs(user_input, client_socket: socket):
     computations = ("SUM", "AVERAGE", "MIN", "MAX")
     if len(user_input) != 3:
-        print("correct usage: SCS [fileID] [computation]")
+        print("[Client]: Correct usage: SCS [fileID] [computation]")
         return
 
-    # TODO check that the fileid is an int
     file_id = user_input[1]
+
+    if not file_id.isdigit():
+        print("[Client]: fileID must be an integer")
+        return
+
     computation = user_input[2]
 
     # check the computation requested is valid
     if not computation in computations:
-        print("invalid computation. Please choose from one of the following:")
+        print(
+            "[Client]: Invalid computation. Please choose from one of the following:"
+        )
         print("    SUM, AVERAGE, MIN, MAX")
         return
 
@@ -394,10 +415,10 @@ def handle_scs(user_input, client_socket: socket):
 def handle_dte(user_input, client_socket: socket):
     file_id = user_input[1]
     if len(user_input) != 2:
-        print("correct usage: DTE [fileID]")
+        print("[Client]: Correct usage: DTE [fileID]")
         return
     if not file_id.isdigit():
-        print("fileID must be an integer")
+        print("[Client]: fileID must be an integer")
         return
 
     message = templates["DTE"]
@@ -410,13 +431,15 @@ def handle_dte(user_input, client_socket: socket):
 
 def handle_uvf(user_input, udp_socket: UdpSocketThread, client_socket: socket):
     if len(user_input) != 3:
-        print("correct usage: UVF [deviceName] [filename]")
+        print("[Client]: Correct usage: UVF [deviceName] [filename]")
         return
 
     _, device_name, filename = user_input
 
     if not os.path.exists(f"client/{filename}"):
-        print(f"a file with the file name '{filename}' does not exist")
+        print(
+            f"[Client]: A file with the file name '{filename}' does not exist"
+        )
         return
 
     device_data = None
@@ -424,7 +447,9 @@ def handle_uvf(user_input, udp_socket: UdpSocketThread, client_socket: socket):
     active_devices = handle_aed(client_socket, display=False)
 
     if not active_devices:
-        print("that device is not currently active. please try again later.")
+        print(
+            "[Client]: That device is not currently active. please try again later"
+        )
         return
 
     # check the device the user wants to send a file to is active
@@ -433,7 +458,9 @@ def handle_uvf(user_input, udp_socket: UdpSocketThread, client_socket: socket):
             device_data = device
 
     if not device_data:
-        print("that device is not currently active. please try again later.")
+        print(
+            "[Client]: That device is not currently active. Please try again later"
+        )
         return
 
     device_address = (device_data[3], int(device_data[4]))
@@ -466,10 +493,20 @@ def exit_program(client_socket: socket):
     sys.exit()
 
 
+def is_port_available(address):
+    try:
+        test_socket = socket(AF_INET, SOCK_DGRAM)
+        test_socket.bind(address)
+        test_socket.close()
+        return True
+    except OSError:
+        return False
+
+
 if __name__ == "__main__":
     try:
         main(sys.argv)
     except KeyboardInterrupt:
         print()
-        print("shutting down...")
+        print("[Client]: Shutting down...")
         sys.exit(0)
