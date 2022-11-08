@@ -87,6 +87,7 @@ class Server:
                 self.user_attempts[user]["banned"] = False
         return self.user_attempts[user]["banned"]
 
+    # sets up the initial data for a user that has connected
     def create_user_attempt_entry(self, user):
         self.user_attempts[user] = {
             "attempts": 0,
@@ -109,6 +110,8 @@ class Server:
         sys.exit(0)
 
 
+# Thread that handles each client. Taking commands from TCP and redirecting to
+# appropriate function
 class ClientThread(Thread):
     def __init__(
         self, client_address: tuple, client_socket: socket, server: Server
@@ -144,8 +147,7 @@ class ClientThread(Thread):
                     self.handle_close()
                     return
 
-            except Exception as e:
-                print(e.message)
+            except Exception:
                 self.handle_close()
                 self.is_active = False
 
@@ -378,7 +380,7 @@ class ClientThread(Thread):
         response["data"] = active_devices
         self.send_data(response)
 
-
+# Thread that handles all the file writing, reading from a queue on the server
 class FileWriter(Thread):
     def __init__(self, server: Server):
         Thread.__init__(self)
@@ -473,7 +475,7 @@ class FileWriter(Thread):
                 )
             print("[Server]: 'cse-edge-device-log.txt' file has been updated")
 
-
+# raised when a client has been banned, or a user is trying to connect whilst banned
 class ClientBannedException(Exception):
     pass
 

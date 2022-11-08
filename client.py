@@ -3,7 +3,6 @@ import sys
 import os
 import json
 from threading import Thread
-from math import ceil
 from time import sleep
 from data_templates import templates
 
@@ -12,7 +11,7 @@ BUFF_SIZE = 2048
 TIMEOUT = 3
 device_name = ""
 
-
+# Thread that handles sending and receiving UDP packets. Used for UVF command
 class UdpSocketThread(Thread):
     def __init__(
         self,
@@ -123,7 +122,6 @@ def main(argv):
         sys.exit(0)
 
     # initialize udp socket
-
     udp_socket = UdpSocketThread(client_udp_port)
     udp_socket.daemon = True
     udp_socket.start()
@@ -205,6 +203,7 @@ def get_credentials():
     return (username.strip(), password)
 
 
+# main function that asks for input command from user and redirects accordingly
 def handle_commands(client_socket: socket, udp_socket: UdpSocketThread):
     commands = ["EDG", "UED", "SCS", "DTE", "AED", "UVF", "OUT"]
     while True:
@@ -493,6 +492,7 @@ def exit_program(client_socket: socket):
     sys.exit()
 
 
+# checks if a given port is available or already taken
 def is_port_available(address):
     try:
         test_socket = socket(AF_INET, SOCK_DGRAM)
